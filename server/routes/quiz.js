@@ -1,144 +1,214 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const handler_1 = require("../filehandling/handler");
 const auth_1 = require("../middlewares/auth");
 const uuid_1 = require("uuid");
+const Quiz_1 = __importDefault(require("../models/Quiz"));
+const User_1 = __importDefault(require("../models/User"));
 const router = express_1.default.Router();
 // Route to verify the users JWT
 router.get('/verifyMe', auth_1.authenticateToken, (req, res) => {
     res.json({ message: "User verified", userid: req.user.userid });
 });
 // Route to add a New Quiz
-router.post('/quizes', auth_1.authenticateToken, (req, res) => {
+router.post('/quizes', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const quizzes = (0, handler_1.readFile)('quizes.json');
-    const users = (0, handler_1.readFile)('users.json');
-    const { title, optionshuffleEnabled, questionshuffleEnabled, ques } = req.body;
-    const newQuiz = { id: (0, uuid_1.v4)(), title, optionshuffleEnabled, questionshuffleEnabled, ques };
-    quizzes.push(newQuiz);
-    (0, handler_1.writeFile)('quizes.json', quizzes);
-    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userid;
-    const userIndex = users.findIndex(user => user.userid === userId);
-    if (userIndex !== -1) {
-        users[userIndex].quizes.push(newQuiz.id);
-        (0, handler_1.writeFile)('users.json', users);
+    try {
+        const { title, optionshuffleEnabled, questionshuffleEnabled, ques } = req.body;
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userid;
+        // Create new quiz with unique ID
+        const quizId = (0, uuid_1.v4)();
+        const newQuiz = new Quiz_1.default({
+            id: quizId,
+            title,
+            optionshuffleEnabled,
+            questionshuffleEnabled,
+            ques: ques || []
+        });
+        yield newQuiz.save();
+        // Add quiz ID to user's quizzes array
+        yield User_1.default.findOneAndUpdate({ userid: userId }, { $push: { quizes: quizId } });
+        res.json({ message: "Quiz added", id: quizId });
     }
-    res.json({ message: "Quiz added", id: newQuiz.id });
-});
+    catch (error) {
+        console.error('Error adding quiz:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
 // Route to get all the quizes
-router.get('/quizes', auth_1.authenticateToken, (req, res) => {
-    const quizzes = (0, handler_1.readFile)('quizes.json');
-    const user = (0, handler_1.readFile)('users.json').find((u) => u.userid === req.user.userid);
-    if (!user)
-        return res.status(404).json({ error: "User not found" });
-    const userQuizzes = quizzes.filter((quiz) => user.quizes.includes(quiz.id));
-    res.json(userQuizzes);
-});
-// Route to get any specific quiz details
-router.get('/quiz/:quizid', auth_1.authenticateToken, (req, res) => {
-    // console.log(req.params)
-    const quiz = (0, handler_1.readFile)('quizes.json').find((q) => q.id === req.params.quizid);
-    if (!quiz)
-        return res.status(404).json({ error: "Quiz not found" });
-    // console.log(quiz)
-    res.json(quiz);
-});
-// Route to get Quiz Titles along with Quiz id
-router.get('/quizTitles', auth_1.authenticateToken, (req, res) => {
-    const quizes = (0, handler_1.readFile)('quizes.json');
-    const user = (0, handler_1.readFile)('users.json').find((u) => { var _a; return u.userid === ((_a = req.user) === null || _a === void 0 ? void 0 : _a.userid); });
-    if (!user)
-        return res.status(404).json({ error: 'User not found' });
-    const userQuizes = quizes.filter((quiz) => user.quizes.includes(quiz.id));
-    const titles = userQuizes.map(quiz => ({
-        qid: quiz.id,
-        qtitle: quiz.title
-    }));
-    res.json(titles);
-});
-// Route to add a New Question to any Quiz
-router.post('/addQuestion', auth_1.authenticateToken, (req, res) => {
-    const { quizid, quesid, ques, options, correctOption } = req.body;
-    const quizes = (0, handler_1.readFile)('quizes.json');
-    const quiz = quizes.find((q) => q.id === quizid);
-    if (!quiz)
-        return res.status(404).json({ error: 'Quiz not found' });
-    const newQuestion = {
-        quesid: quesid,
-        ques,
-        options,
-        correctOption
-    };
-    quiz.ques.push(newQuestion);
-    (0, handler_1.writeFile)('quizes.json', quizes);
-    res.json({ message: 'Question added successfully', question: newQuestion });
-});
-// Route to edit any Question of any quiz
-router.put('/editQuestion', auth_1.authenticateToken, (req, res) => {
-    const { quizid, questionid, ques, options, correctOption } = req.body;
-    const quizes = (0, handler_1.readFile)('quizes.json');
-    const quiz = quizes.find((q) => q.id === quizid);
-    if (!quiz)
-        return res.status(404).json({ error: 'Quiz not found' });
-    const question = quiz.ques.find((q) => q.id === questionid);
-    if (!question)
-        return res.status(404).json({ error: 'Question not found' });
-    question.ques = ques || question.ques;
-    question.options = options || question.options;
-    question.correctOption = correctOption || question.correctOption;
-    (0, handler_1.writeFile)('quizes.json', quizes);
-    res.json({ message: 'Question updated successfully', question });
-});
-// Route to delete any Specific Question of the Quiz
-router.delete('/deleteQuestion', auth_1.authenticateToken, (req, res) => {
-    const { quizid, questionid } = req.body;
-    console.log(req.body);
-    const quizes = (0, handler_1.readFile)('quizes.json');
-    const quiz = quizes.find((q) => q.id === quizid);
-    if (!quiz)
-        return res.status(404).json({ error: 'Quiz not found' });
-    quiz.ques = quiz.ques.filter((q) => q.id !== questionid);
-    (0, handler_1.writeFile)('quizes.json', quizes);
-    res.json({ message: 'Question deleted successfully' });
-});
-// Route to edit Title of the Quiz provided with <quizid>
-router.put('/editTitle/:quizid', auth_1.authenticateToken, (req, res) => {
-    const { quizid } = req.params;
-    const { title } = req.body;
-    const quizes = (0, handler_1.readFile)('quizes.json');
-    const quiz = quizes.find((q) => q.id === quizid);
-    if (!quiz)
-        return res.status(404).json({ error: 'Quiz not found' });
-    quiz.title = title;
-    (0, handler_1.writeFile)('quizes.json', quizes);
-    res.json({ message: 'Quiz title updated successfully', title });
-});
-// Route to delete any specific quiz
-router.delete("/delete/:quizid", auth_1.authenticateToken, (req, res) => {
-    const { quizid } = req.params;
-    // Read existing quizzes and users
-    const quizzes = (0, handler_1.readFile)('quizes.json');
-    const users = (0, handler_1.readFile)('users.json');
-    // Find the quiz to delete
-    const quizIndex = quizzes.findIndex(quiz => quiz.id === quizid);
-    if (quizIndex === -1) {
-        return res.status(404).json({ message: "Quiz not found" });
-    }
-    // Remove the quiz from the quizzes array
-    quizzes.splice(quizIndex, 1);
-    (0, handler_1.writeFile)('quizes.json', quizzes);
-    // Remove the quiz id from the user's quizzes
-    users.forEach(user => {
-        const quizIndexInUser = user.quizes.indexOf(quizid);
-        if (quizIndexInUser !== -1) {
-            user.quizes.splice(quizIndexInUser, 1);
+router.get('/quizes', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.userid;
+        // Find user to get their quiz IDs
+        const user = yield User_1.default.findOne({ userid: userId });
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
         }
-    });
-    (0, handler_1.writeFile)('users.json', users);
-    res.json({ message: "Quiz deleted successfully" });
-});
+        // Find all quizzes that belong to the user
+        const userQuizzes = yield Quiz_1.default.find({ id: { $in: user.quizes } });
+        res.json(userQuizzes);
+    }
+    catch (error) {
+        console.error('Error getting quizzes:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
+// Route to get any specific quiz details
+router.get('/quiz/:quizid', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const quiz = yield Quiz_1.default.findOne({ id: req.params.quizid });
+        if (!quiz) {
+            res.status(404).json({ error: "Quiz not found" });
+            return;
+        }
+        res.json(quiz);
+    }
+    catch (error) {
+        console.error('Error getting quiz details:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
+// Route to get Quiz Titles along with Quiz id
+router.get('/quizTitles', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userid;
+        // Find user to get their quiz IDs
+        const user = yield User_1.default.findOne({ userid: userId });
+        if (!user) {
+            res.status(404).json({ error: 'User not found' });
+            return;
+        }
+        // Find all quizzes that belong to the user and select only id and title
+        const userQuizzes = yield Quiz_1.default.find({ id: { $in: user.quizes } }, { id: 1, title: 1, _id: 0 });
+        const titles = userQuizzes.map(quiz => ({
+            qid: quiz.id,
+            qtitle: quiz.title
+        }));
+        res.json(titles);
+    }
+    catch (error) {
+        console.error('Error getting quiz titles:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
+// Route to add a New Question to any Quiz
+router.post('/addQuestion', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { quizid, quesid, ques, options, correctOption } = req.body;
+        const newQuestion = {
+            quesid: quesid || (0, uuid_1.v4)(),
+            ques,
+            options,
+            correctOption
+        };
+        const quiz = yield Quiz_1.default.findOneAndUpdate({ id: quizid }, { $push: { ques: newQuestion } }, { new: true });
+        if (!quiz) {
+            res.status(404).json({ error: 'Quiz not found' });
+            return;
+        }
+        res.json({ message: 'Question added successfully', question: newQuestion });
+    }
+    catch (error) {
+        console.error('Error adding question:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
+// Route to edit any Question of any quiz
+router.put('/editQuestion', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { quizid, questionid, ques, options, correctOption } = req.body;
+        const quiz = yield Quiz_1.default.findOne({ id: quizid });
+        if (!quiz) {
+            res.status(404).json({ error: 'Quiz not found' });
+            return;
+        }
+        const questionIndex = quiz.ques.findIndex(q => q.quesid === questionid);
+        if (questionIndex === -1) {
+            res.status(404).json({ error: 'Question not found' });
+            return;
+        }
+        // Update the question fields
+        if (ques)
+            quiz.ques[questionIndex].ques = ques;
+        if (options)
+            quiz.ques[questionIndex].options = options;
+        if (correctOption !== undefined)
+            quiz.ques[questionIndex].correctOption = correctOption;
+        yield quiz.save();
+        res.json({
+            message: 'Question updated successfully',
+            question: quiz.ques[questionIndex]
+        });
+    }
+    catch (error) {
+        console.error('Error editing question:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
+// Route to delete any Specific Question of the Quiz
+router.delete('/deleteQuestion', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { quizid, questionid } = req.body;
+        const quiz = yield Quiz_1.default.findOneAndUpdate({ id: quizid }, { $pull: { ques: { quesid: questionid } } }, { new: true });
+        if (!quiz) {
+            res.status(404).json({ error: 'Quiz not found' });
+            return;
+        }
+        res.json({ message: 'Question deleted successfully' });
+    }
+    catch (error) {
+        console.error('Error deleting question:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
+// Route to edit Title of the Quiz provided with <quizid>
+router.put('/editTitle/:quizid', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { quizid } = req.params;
+        const { title } = req.body;
+        const quiz = yield Quiz_1.default.findOneAndUpdate({ id: quizid }, { title }, { new: true });
+        if (!quiz) {
+            res.status(404).json({ error: 'Quiz not found' });
+            return;
+        }
+        res.json({ message: 'Quiz title updated successfully', title });
+    }
+    catch (error) {
+        console.error('Error updating quiz title:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
+// Route to delete any specific quiz
+router.delete("/delete/:quizid", auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { quizid } = req.params;
+        // Find and delete the quiz
+        const result = yield Quiz_1.default.findOneAndDelete({ id: quizid });
+        if (!result) {
+            res.status(404).json({ message: "Quiz not found" });
+            return;
+        }
+        // Remove quiz ID from user's quizzes array
+        yield User_1.default.updateMany({ quizes: quizid }, { $pull: { quizes: quizid } });
+        res.json({ message: "Quiz deleted successfully" });
+    }
+    catch (error) {
+        console.error('Error deleting quiz:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}));
 exports.default = router;
